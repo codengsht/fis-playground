@@ -1,0 +1,55 @@
+# GoReleaser configuration for FIS Playground Lambda function
+version: 2
+
+project_name: fis-playground
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+    - go vet ./...
+
+builds:
+  - id: lambda
+    main: ./cmd/lambda
+    binary: main
+    goos:
+      - linux
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    hooks:
+      post:
+        - file {{ .Path }}
+        - chmod +x {{ .Path }}
+
+archives:
+  - id: lambda-deployment
+    builds:
+      - lambda
+    format: zip
+    name_template: "lambda-deployment"
+    files:
+      - none*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  disable: true
+
+announce:
+  skip: true

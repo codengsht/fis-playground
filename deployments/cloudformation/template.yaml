@@ -1,0 +1,368 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'FIS Playground - Serverless application for fault injection experimentation'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment name for resource naming
+
+Globals:
+  Function:
+    Runtime: go1.x
+
+Resources:
+  # DynamoDB Table for storing items
+  ItemsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'fis-playground-items-${Environment}'
+      BillingMode: ON_DEMAND
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FISPlayground
+        - Key: Purpose
+          Value: FaultInjectionTesting
+
+  # Lambda Function with Go runtime and DynamoDB permissions
+  FISPlaygroundFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'fis-playground-${Environment}'
+      CodeUri: ../../cmd/lambda/
+      Handler: main
+      Runtime: go1.x
+      Timeout: 30
+      MemorySize: 256
+      ReservedConcurrencyLimit: 10
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref ItemsTable
+          AWS_REGION: !Ref AWS::Region
+          ENVIRONMENT: !Ref Environment
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ItemsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:DescribeTable
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+              Resource: !GetAtt ItemsTable.Arn
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/fis-playground-${Environment}:*'
+      Tags:
+        Environment: !Ref Environment
+        Application: FISPlayground
+        Purpose: FaultInjectionTesting
+
+  # API Gateway REST API
+  FISPlaygroundApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'fis-playground-api-${Environment}'
+      Description: 'REST API for FIS Playground application'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FISPlayground
+        - Key: Purpose
+          Value: FaultInjectionTesting
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ItemsGetMethod
+      - ItemsPostMethod
+      - ItemGetMethod
+      - ItemPutMethod
+      - ItemDeleteMethod
+      - ItemsOptionsMethod
+      - ItemOptionsMethod
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      StageName: !Ref Environment
+
+  # Root resource for /items
+  ItemsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ParentId: !GetAtt FISPlaygroundApi.RootResourceId
+      PathPart: items
+
+  # Resource for /items/{id}
+  ItemResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ParentId: !Ref ItemsResource
+      PathPart: '{id}'
+
+  # GET /items method
+  ItemsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        - StatusCode: 400
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+        - StatusCode: 500
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+
+  # POST /items method
+  ItemsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 201
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        - StatusCode: 400
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+        - StatusCode: 500
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+
+  # GET /items/{id} method
+  ItemGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        - StatusCode: 404
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+        - StatusCode: 500
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+
+  # PUT /items/{id} method
+  ItemPutMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemResource
+      HttpMethod: PUT
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        - StatusCode: 404
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+        - StatusCode: 400
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+        - StatusCode: 500
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+
+  # DELETE /items/{id} method
+  ItemDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemResource
+      HttpMethod: DELETE
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        - StatusCode: 404
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+        - StatusCode: 500
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+
+  # OPTIONS /items method for CORS preflight
+  ItemsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: true
+            Access-Control-Allow-Headers: true
+            Access-Control-Allow-Methods: true
+
+  # OPTIONS /items/{id} method for CORS preflight
+  ItemOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref ItemResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: true
+            Access-Control-Allow-Headers: true
+            Access-Control-Allow-Methods: true
+
+  # Lambda permission for API Gateway to invoke the function
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref FISPlaygroundFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${FISPlaygroundApi}/*/*'
+
+Outputs:
+  # API Gateway endpoint URL for testing
+  ApiEndpoint:
+    Description: 'API Gateway endpoint URL for testing the FIS Playground API'
+    Value: !Sub 'https://${FISPlaygroundApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  ApiId:
+    Description: 'API Gateway REST API ID'
+    Value: !Ref FISPlaygroundApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'
+
+  # DynamoDB table name and ARN
+  DynamoDBTableName:
+    Description: 'DynamoDB table name for storing items'
+    Value: !Ref ItemsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableName'
+
+  DynamoDBTableArn:
+    Description: 'DynamoDB table ARN for IAM policies and monitoring'
+    Value: !GetAtt ItemsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTableArn'
+
+  # Lambda function name and ARN
+  LambdaFunctionName:
+    Description: 'Lambda function name for monitoring and debugging'
+    Value: !Ref FISPlaygroundFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunctionName'
+
+  LambdaFunctionArn:
+    Description: 'Lambda function ARN for IAM policies and integrations'
+    Value: !GetAtt FISPlaygroundFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunctionArn'
+
+  # Additional useful outputs for fault injection testing
+  StackName:
+    Description: 'CloudFormation stack name for resource management'
+    Value: !Ref AWS::StackName
+    Export:
+      Name: !Sub '${AWS::StackName}-StackName'
+
+  Environment:
+    Description: 'Environment name used for resource naming'
+    Value: !Ref Environment
+    Export:
+      Name: !Sub '${AWS::StackName}-Environment'
