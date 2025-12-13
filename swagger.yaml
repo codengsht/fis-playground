@@ -1,0 +1,483 @@
+openapi: 3.0.3
+info:
+  title: FIS Playground API
+  description: REST API for managing items in the FIS Playground system
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: https://w66uzdihl8.execute-api.us-east-1.amazonaws.com/dev
+    description: Development API Gateway
+
+paths:
+  /health:
+    get:
+      summary: API health check
+      description: Simple API health check endpoint
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/db:
+    get:
+      summary: Database health check
+      description: Checks DynamoDB connectivity status
+      operationId: healthCheckDB
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Database is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DBHealthResponse'
+        '503':
+          description: Database is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DBHealthResponse'
+
+  /items:
+    get:
+      summary: List all items
+      description: Retrieves a paginated list of items
+      operationId: listItems
+      tags:
+        - Items
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of items to return (1-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: next_token
+          in: query
+          description: Pagination token for fetching next page
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of items retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListItemsResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a new item
+      description: Creates a new item with the provided name and description
+      operationId: createItem
+      tags:
+        - Items
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateItemRequest'
+      responses:
+        '201':
+          description: Item created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /items/{id}:
+    get:
+      summary: Get an item by ID
+      description: Retrieves a single item by its unique identifier
+      operationId: getItem
+      tags:
+        - Items
+      parameters:
+        - name: id
+          in: path
+          description: Unique item identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Item retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+        '400':
+          description: Missing or invalid item ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update an item
+      description: Updates an existing item with the provided fields
+      operationId: updateItem
+      tags:
+        - Items
+      parameters:
+        - name: id
+          in: path
+          description: Unique item identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemRequest'
+      responses:
+        '200':
+          description: Item updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete an item
+      description: Deletes an item by its unique identifier
+      operationId: deleteItem
+      tags:
+        - Items
+      parameters:
+        - name: id
+          in: path
+          description: Unique item identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Item deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteItemResponse'
+        '400':
+          description: Missing or invalid item ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique item identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          description: Item name (max 100 characters)
+          maxLength: 100
+          example: "Sample Item"
+        description:
+          type: string
+          description: Item description (max 500 characters)
+          maxLength: 500
+          example: "This is a sample item description"
+        status:
+          type: string
+          description: Item status
+          enum:
+            - active
+            - inactive
+            - pending
+          example: "active"
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the item was created
+          example: "2025-12-13T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the item was last updated
+          example: "2025-12-13T10:30:00Z"
+      required:
+        - id
+        - name
+        - description
+        - status
+        - created_at
+        - updated_at
+
+    CreateItemRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Item name (required, max 100 characters)
+          maxLength: 100
+          example: "New Item"
+        description:
+          type: string
+          description: Item description (required, max 500 characters)
+          maxLength: 500
+          example: "Description of the new item"
+      required:
+        - name
+        - description
+
+    UpdateItemRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Updated item name (max 100 characters)
+          maxLength: 100
+          example: "Updated Item Name"
+        description:
+          type: string
+          description: Updated item description (max 500 characters)
+          maxLength: 500
+          example: "Updated description"
+        status:
+          type: string
+          description: Updated item status
+          enum:
+            - active
+            - inactive
+            - pending
+          example: "inactive"
+
+    ItemResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Item'
+
+    ListItemsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Item'
+            count:
+              type: integer
+              description: Number of items in current response
+              example: 10
+            has_more:
+              type: boolean
+              description: Indicates if more items are available
+              example: true
+            next_token:
+              type: string
+              description: Token for fetching next page (only present if has_more is true)
+              example: "pagination_token_placeholder"
+
+    DeleteItemResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Item deleted successfully"
+            id:
+              type: string
+              example: "550e8400-e29b-41d4-a716-446655440000"
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              example: "healthy"
+            service:
+              type: string
+              example: "FIS Playground API"
+
+    DBHealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - healthy
+                - unhealthy
+                - unknown
+              example: "healthy"
+            service:
+              type: string
+              example: "DynamoDB"
+            message:
+              type: string
+              example: "Connected"
+            tableName:
+              type: string
+              example: "fis-playground-items"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          $ref: '#/components/schemas/ErrorInfo'
+
+    ErrorInfo:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+          enum:
+            - INVALID_REQUEST
+            - MISSING_FIELD
+            - INVALID_FORMAT
+            - VALUE_TOO_LONG
+            - INVALID_VALUE
+            - NOT_FOUND
+            - ALREADY_EXISTS
+            - DATABASE_ERROR
+            - CONNECTION_ERROR
+            - OPERATION_FAILED
+            - THROUGHPUT_EXCEEDED
+            - INTERNAL_ERROR
+            - SERVICE_UNAVAILABLE
+            - TIMEOUT
+          example: "NOT_FOUND"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Resource not found"
+        type:
+          type: string
+          description: Error category
+          enum:
+            - validation
+            - not_found
+            - conflict
+            - database
+            - system
+            - authentication
+            - rate_limit
+          example: "not_found"
+        details:
+          type: string
+          description: Additional error details
+          example: "No Item found with ID: 123"
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Items
+    description: Item management operations
