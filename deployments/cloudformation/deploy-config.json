@@ -1,0 +1,38 @@
+{
+  "StackName": "fis-playground-dev",
+  "TemplateBody": "deployments/cloudformation/template.yaml",
+  "Capabilities": [
+    "CAPABILITY_IAM",
+    "CAPABILITY_NAMED_IAM"
+  ],
+  "Tags": [
+    {
+      "Key": "Environment",
+      "Value": "dev"
+    },
+    {
+      "Key": "Application",
+      "Value": "FISPlayground"
+    },
+    {
+      "Key": "Purpose",
+      "Value": "FaultInjectionTesting"
+    },
+    {
+      "Key": "ManagedBy",
+      "Value": "CloudFormation"
+    },
+    {
+      "Key": "Repository",
+      "Value": "fis-playground"
+    }
+  ],
+  "OnFailure": "ROLLBACK",
+  "EnableTerminationProtection": false,
+  "TimeoutInMinutes": 30,
+  "NotificationARNs": [],
+  "RollbackConfiguration": {
+    "RollbackTriggers": [],
+    "MonitoringTimeInMinutes": 0
+  }
+}
