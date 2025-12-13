@@ -220,6 +220,20 @@ make test-integration
 
 If you prefer using the AWS Console instead of command-line tools, you can deploy the CloudFormation stack through the web interface.
 
+### Template Selection for Console Deployment
+
+The project includes two CloudFormation templates:
+
+| Template | Purpose | Lambda Code Reference |
+|----------|---------|----------------------|
+| `template.yaml` | **Command-line deployment** (SAM) | Local directory (`../../cmd/lambda/`) |
+| `template-ui.yaml` | **Console deployment** (Standard CloudFormation) | S3 bucket reference |
+
+**For console deployment, you MUST use `template-ui.yaml`** because:
+- The main `template.yaml` uses AWS SAM syntax with local file references
+- SAM templates require the SAM CLI for deployment
+- The `template-ui.yaml` is designed for standard CloudFormation with S3 references
+
 ### Prerequisites for Console Deployment
 
 1. **Build the Lambda Function First:**
@@ -230,12 +244,18 @@ If you prefer using the AWS Console instead of command-line tools, you can deplo
 
 2. **Upload Lambda Code to S3 (Required):**
    ```bash
-   # Create an S3 bucket for deployment artifacts
-   aws s3 mb s3://your-deployment-bucket-name --region us-east-1
+   # Create an S3 bucket for deployment artifacts (choose a unique name)
+   aws s3 mb s3://your-unique-deployment-bucket-name --region us-east-1
    
    # Upload the Lambda deployment package
-   aws s3 cp lambda s3://your-deployment-bucket-name/fis-playground-lambda.zip
+   aws s3 cp lambda s3://your-unique-deployment-bucket-name/lambda-deployment.zip
    ```
+   
+   **Important Notes:**
+   - The S3 bucket name must be globally unique
+   - Use the same region where you'll deploy the CloudFormation stack
+   - The Lambda binary file is created by the build process as `lambda`
+   - You're uploading it to S3 with the key `lambda-deployment.zip`
 
 3. **Create CloudFormation Service Role (Optional but Recommended):**
    
@@ -322,7 +342,8 @@ If you prefer using the AWS Console instead of command-line tools, you can deplo
 1. Click **"Create stack"** → **"With new resources (standard)"**
 2. In **"Specify template"** section:
    - Select **"Upload a template file"**
-   - Click **"Choose file"** and select `deployments/cloudformation/template.yaml`
+   - Click **"Choose file"** and select `deployments/cloudformation/template-ui.yaml`
+   - **Important**: Use `template-ui.yaml` (not `template.yaml`) for console deployment
    - Click **"Next"**
 
 #### Step 3: Configure Stack Details
@@ -330,6 +351,8 @@ If you prefer using the AWS Console instead of command-line tools, you can deplo
 1. **Stack name**: Enter a name (e.g., `fis-playground`)
 2. **Parameters**:
    - **Environment**: Enter environment name (e.g., `dev`, `prod`)
+   - **LambdaCodeS3Bucket**: Enter the S3 bucket name where you uploaded the Lambda code
+   - **LambdaCodeS3Key**: Enter the S3 key (default: `lambda-deployment.zip`)
 3. Click **"Next"**
 
 #### Step 4: Configure Stack Options
@@ -396,14 +419,23 @@ Once deployment completes (status: **CREATE_COMPLETE**):
 #### Common Console Issues
 
 1. **Template Upload Fails**
+   - Ensure you're using `template-ui.yaml` (not `template.yaml`) for console deployment
    - Ensure the template file is valid YAML
    - Check file size (must be < 1MB for direct upload)
-   - Validate template syntax locally first
+   - Validate template syntax locally first:
+     ```bash
+     aws cloudformation validate-template --template-body file://deployments/cloudformation/template-ui.yaml
+     ```
 
 2. **Lambda Code Not Found**
-   - Verify the Lambda code was built and uploaded to S3
-   - Check S3 bucket permissions
-   - Ensure CodeUri in template points to correct S3 location
+   - Verify the Lambda code was built: `make build` should create a `lambda` file
+   - Verify the code was uploaded to S3:
+     ```bash
+     aws s3 ls s3://your-bucket-name/lambda-deployment.zip
+     ```
+   - Check S3 bucket permissions (CloudFormation role needs `s3:GetObject`)
+   - Ensure the S3 bucket and key parameters match what you entered in the console
+   - Verify the S3 bucket is in the same region as your CloudFormation stack
 
 3. **IAM Permission Errors**
    - Verify your AWS user has CloudFormation permissions
@@ -501,6 +533,8 @@ To clean up resources:
 | **Advanced Options** | All CloudFormation features | All CloudFormation features |
 | **Learning Curve** | Beginner-friendly | Requires CLI familiarity |
 | **IAM Role Options** | Can use service role or user permissions | Uses user permissions only |
+| **Template Used** | `template-ui.yaml` (Standard CloudFormation) | `template.yaml` (AWS SAM) |
+| **Lambda Code** | Must upload to S3 first | Packaged automatically by SAM |
 
 ### When to Use Console Deployment
 
@@ -564,6 +598,57 @@ Error responses:
 ```
 
 ### Endpoints
+
+#### Health Check - API
+
+**GET** `/health`
+
+Simple health check to verify the API is running.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "service": "FIS Playground API",
+    "status": "healthy"
+  },
+  "error": null
+}
+```
+
+#### Health Check - Database
+
+**GET** `/health/db`
+
+Verifies DynamoDB connectivity and returns table information.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Connected",
+    "service": "DynamoDB",
+    "status": "healthy",
+    "tableName": "fis-playground-items-dev"
+  },
+  "error": null
+}
+```
+
+**Response (503 Service Unavailable):**
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "type": "ServiceError",
+    "code": "DATABASE_UNAVAILABLE",
+    "message": "Unable to connect to DynamoDB"
+  }
+}
+```
 
 #### 1. Create Item
 
@@ -748,6 +833,15 @@ The API includes CORS headers for browser-based applications:
 ## Usage Examples
 
 ### Using curl
+
+#### Health Check
+```bash
+# API health check
+curl https://your-api-endpoint.amazonaws.com/dev/health
+
+# Database connectivity check
+curl https://your-api-endpoint.amazonaws.com/dev/health/db
+```
 
 #### Create an Item
 ```bash

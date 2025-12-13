@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -106,6 +107,11 @@ func (r *DynamoDBRepository) CreateItem(ctx context.Context, item *models.Item) 
 
 	_, err = r.client.PutItem(ctx, input)
 	if err != nil {
+		// For create, ConditionalCheckFailedException means item already exists
+		var conditionalCheckFailed *types.ConditionalCheckFailedException
+		if errors.As(err, &conditionalCheckFailed) {
+			return fmt.Errorf("%w: item with this ID already exists", ErrItemAlreadyExists)
+		}
 		return HandleDynamoDBError(err)
 	}
 

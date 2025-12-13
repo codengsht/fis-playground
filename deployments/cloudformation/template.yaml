@@ -7,10 +7,16 @@ Parameters:
     Type: String
     Default: dev
     Description: Environment name for resource naming
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment package
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for the Lambda deployment package
 
 Globals:
   Function:
-    Runtime: go1.x
+    Runtime: provided.al2023
 
 Resources:
   # DynamoDB Table for storing items
@@ -18,7 +24,7 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub 'fis-playground-items-${Environment}'
-      BillingMode: ON_DEMAND
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -42,16 +48,19 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub 'fis-playground-${Environment}'
-      CodeUri: ../../cmd/lambda/
-      Handler: main
-      Runtime: go1.x
+      CodeUri:
+        Bucket: !Ref LambdaS3Bucket
+        Key: !Ref LambdaS3Key
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures:
+        - x86_64
       Timeout: 30
       MemorySize: 256
-      ReservedConcurrencyLimit: 10
+
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref ItemsTable
-          AWS_REGION: !Ref AWS::Region
           ENVIRONMENT: !Ref Environment
       Policies:
         - DynamoDBCrudPolicy:
@@ -107,9 +116,59 @@ Resources:
       - ItemDeleteMethod
       - ItemsOptionsMethod
       - ItemOptionsMethod
+      - HealthGetMethod
+      - HealthDBGetMethod
     Properties:
       RestApiId: !Ref FISPlaygroundApi
       StageName: !Ref Environment
+
+  # Root resource for /health
+  HealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ParentId: !GetAtt FISPlaygroundApi.RootResourceId
+      PathPart: health
+
+  # GET /health method - simple API health check
+  HealthGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref HealthResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+        - StatusCode: 503
+
+  # Resource for /health/db
+  HealthDBResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ParentId: !Ref HealthResource
+      PathPart: db
+
+  # GET /health/db method - DynamoDB connectivity check
+  HealthDBGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref HealthDBResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+        - StatusCode: 503
 
   # Root resource for /items
   ItemsResource:
@@ -141,16 +200,8 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
         - StatusCode: 400
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
         - StatusCode: 500
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
 
   # POST /items method
   ItemsPostMethod:
@@ -166,16 +217,8 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 201
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
         - StatusCode: 400
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
         - StatusCode: 500
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
 
   # GET /items/{id} method
   ItemGetMethod:
@@ -191,16 +234,8 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
         - StatusCode: 404
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
         - StatusCode: 500
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
 
   # PUT /items/{id} method
   ItemPutMethod:
@@ -216,19 +251,9 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
         - StatusCode: 404
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
         - StatusCode: 400
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
         - StatusCode: 500
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
 
   # DELETE /items/{id} method
   ItemDeleteMethod:
@@ -244,16 +269,8 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
         - StatusCode: 404
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
         - StatusCode: 500
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
 
   # OPTIONS /items method for CORS preflight
   ItemsOptionsMethod:
@@ -275,10 +292,10 @@ Resources:
           application/json: '{"statusCode": 200}'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: true
-            Access-Control-Allow-Headers: true
-            Access-Control-Allow-Methods: true
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   # OPTIONS /items/{id} method for CORS preflight
   ItemOptionsMethod:
@@ -300,10 +317,10 @@ Resources:
           application/json: '{"statusCode": 200}'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: true
-            Access-Control-Allow-Headers: true
-            Access-Control-Allow-Methods: true
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   # Lambda permission for API Gateway to invoke the function
   LambdaApiGatewayPermission:

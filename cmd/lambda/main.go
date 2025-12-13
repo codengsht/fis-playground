@@ -51,9 +51,10 @@ func init() {
 		MaxAge:           300,
 	}))
 
-	// Health check endpoint
-	r.Get("/health", itemHandler.HealthCheck)
-	r.Get("/", itemHandler.HealthCheck) // Root path health check
+	// Health check endpoints
+	r.Get("/health", itemHandler.HealthCheck)       // Simple API health check
+	r.Get("/health/db", itemHandler.HealthCheckDB)  // DynamoDB connectivity check
+	r.Get("/", itemHandler.HealthCheck)             // Root path health check
 
 	// API routes
 	r.Route("/items", func(r chi.Router) {

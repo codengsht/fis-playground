@@ -151,6 +151,26 @@ if ! ./scripts/build.sh; then
     exit 1
 fi
 
+# Create S3 bucket for Lambda deployment if it doesn't exist
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+S3_BUCKET="fis-playground-lambda-${ACCOUNT_ID}-${REGION}"
+log_info "Using S3 bucket: $S3_BUCKET"
+
+if ! aws s3 ls "s3://$S3_BUCKET" --region "$REGION" >/dev/null 2>&1; then
+    log_info "Creating S3 bucket for Lambda deployment..."
+    if [[ "$REGION" == "us-east-1" ]]; then
+        aws s3api create-bucket --bucket "$S3_BUCKET" --region "$REGION"
+    else
+        aws s3api create-bucket --bucket "$S3_BUCKET" --region "$REGION" --create-bucket-configuration LocationConstraint="$REGION"
+    fi
+fi
+
+# Upload Lambda deployment package to S3
+log_info "Uploading Lambda deployment package to S3..."
+S3_KEY="lambda-deployment-$(date +%Y%m%d%H%M%S).zip"
+aws s3 cp build/lambda-deployment.zip "s3://$S3_BUCKET/$S3_KEY" --region "$REGION"
+log_success "Lambda package uploaded to s3://$S3_BUCKET/$S3_KEY"
+
 # Check if stack exists and get current status
 STACK_EXISTS=false
 STACK_STATUS=""
@@ -190,8 +210,8 @@ fi
 CF_PARAMS=(
     --stack-name "$STACK_NAME"
     --template-body file://"$TEMPLATE_FILE"
-    --parameters ParameterKey=Environment,ParameterValue="$ENVIRONMENT"
-    --capabilities CAPABILITY_IAM
+    --parameters ParameterKey=Environment,ParameterValue="$ENVIRONMENT" ParameterKey=LambdaS3Bucket,ParameterValue="$S3_BUCKET" ParameterKey=LambdaS3Key,ParameterValue="$S3_KEY"
+    --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
     --region "$REGION"
 )
 

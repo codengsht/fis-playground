@@ -582,35 +582,6 @@ func TestAPIResponseFormat(t *testing.T) {
 	
 	client := NewHTTPClient(config.APIEndpoint, config.Timeout)
 	
-	t.Run("HealthCheckResponseFormat", func(t *testing.T) {
-		resp, err := client.makeRequest("GET", "/health", nil)
-		if err != nil {
-			t.Fatalf("Failed to make request: %v", err)
-		}
-		
-		// Verify content type
-		contentType := resp.Header.Get("Content-Type")
-		if !strings.Contains(contentType, "application/json") {
-			t.Errorf("Expected JSON content type, got %s", contentType)
-		}
-		
-		// Verify response structure
-		apiResp, err := parseResponse(resp)
-		if err != nil {
-			t.Fatalf("Failed to parse response: %v", err)
-		}
-		
-		// Verify required fields are present
-		if apiResp.Success != true {
-			t.Error("Expected success field to be true")
-		}
-		
-		// Health check should have data
-		if apiResp.Data == nil {
-			t.Error("Expected data field in health check response")
-		}
-	})
-	
 	t.Run("CreateItemResponseFormat", func(t *testing.T) {
 		createReq := models.CreateItemRequest{
 			Name:        "Format Test Item",
@@ -829,6 +800,115 @@ func TestEdgeCases(t *testing.T) {
 			if err := <-results; err != nil {
 				t.Errorf("Concurrent operation failed: %v", err)
 			}
+		}
+	})
+}
+
+
+// TestHealthEndpoints tests the health check endpoints
+func TestHealthEndpoints(t *testing.T) {
+	config := getTestConfig()
+	if config.APIEndpoint == "" {
+		t.Fatal("API_ENDPOINT not set. Integration tests require a deployed API endpoint. Deploy the stack first with 'make deploy'")
+	}
+
+	client := NewHTTPClient(config.APIEndpoint, config.Timeout)
+
+	t.Run("APIHealthCheck", func(t *testing.T) {
+		resp, err := client.makeRequest("GET", "/health", nil)
+		if err != nil {
+			t.Fatalf("Failed to make request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+
+		// Verify content type
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			t.Errorf("Expected JSON content type, got %s", contentType)
+		}
+
+		apiResp, err := parseResponse(resp)
+		if err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if !apiResp.Success {
+			t.Errorf("Expected success=true, got success=%v", apiResp.Success)
+		}
+
+		// Verify health data structure
+		if apiResp.Data == nil {
+			t.Fatal("Expected data in response, got nil")
+		}
+
+		healthData, ok := apiResp.Data.(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected health data to be object")
+		}
+
+		// Verify required fields
+		if status, ok := healthData["status"].(string); !ok || status != "healthy" {
+			t.Errorf("Expected status 'healthy', got %v", healthData["status"])
+		}
+
+		if service, ok := healthData["service"].(string); !ok || service == "" {
+			t.Errorf("Expected service name, got %v", healthData["service"])
+		}
+	})
+
+	t.Run("DynamoDBHealthCheck", func(t *testing.T) {
+		resp, err := client.makeRequest("GET", "/health/db", nil)
+		if err != nil {
+			t.Fatalf("Failed to make request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+
+		// Verify content type
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			t.Errorf("Expected JSON content type, got %s", contentType)
+		}
+
+		apiResp, err := parseResponse(resp)
+		if err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if !apiResp.Success {
+			t.Errorf("Expected success=true, got success=%v", apiResp.Success)
+		}
+
+		// Verify health data structure
+		if apiResp.Data == nil {
+			t.Fatal("Expected data in response, got nil")
+		}
+
+		healthData, ok := apiResp.Data.(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected health data to be object")
+		}
+
+		// Verify required fields
+		if status, ok := healthData["status"].(string); !ok || status != "healthy" {
+			t.Errorf("Expected status 'healthy', got %v", healthData["status"])
+		}
+
+		if service, ok := healthData["service"].(string); !ok || service != "DynamoDB" {
+			t.Errorf("Expected service 'DynamoDB', got %v", healthData["service"])
+		}
+
+		if message, ok := healthData["message"].(string); !ok || message != "Connected" {
+			t.Errorf("Expected message 'Connected', got %v", healthData["message"])
+		}
+
+		if tableName, ok := healthData["tableName"].(string); !ok || tableName == "" {
+			t.Errorf("Expected tableName to be set, got %v", healthData["tableName"])
 		}
 	})
 }

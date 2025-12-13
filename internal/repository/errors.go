@@ -33,7 +33,12 @@ func HandleDynamoDBError(err error) error {
 	case errors.As(err, &resourceNotFound):
 		return fmt.Errorf("%w: %s", ErrItemNotFound, err.Error())
 	case errors.As(err, &conditionalCheckFailed):
-		return fmt.Errorf("%w: conditional check failed", ErrItemAlreadyExists)
+		// ConditionalCheckFailedException can mean either:
+		// - Item already exists (for create with attribute_not_exists)
+		// - Item doesn't exist (for update/delete with attribute_exists)
+		// We return ErrItemNotFound as the more common case for update/delete
+		// The create operation handles this separately
+		return fmt.Errorf("%w: conditional check failed", ErrItemNotFound)
 	case errors.As(err, &provisionedThroughputExceeded):
 		return fmt.Errorf("%w: throughput exceeded", ErrOperationFailed)
 	case errors.As(err, &resourceInUse):

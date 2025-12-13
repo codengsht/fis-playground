@@ -7,7 +7,7 @@ GOOS=linux
 GOARCH=amd64
 CGO_ENABLED=0
 BUILD_DIR=build
-BINARY_NAME=main
+BINARY_NAME=bootstrap
 PACKAGE_NAME=lambda-deployment.zip
 
 # Default target

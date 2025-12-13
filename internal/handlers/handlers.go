@@ -24,7 +24,7 @@ func NewItemHandler(repo repository.ItemRepository) *ItemHandler {
 	}
 }
 
-// HealthCheck handles GET /health requests
+// HealthCheck handles GET /health requests - simple API health check
 func (h *ItemHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	response := models.APIResponse{
 		Success: true,
@@ -35,6 +35,49 @@ func (h *ItemHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSONResponse(w, http.StatusOK, response)
+}
+
+// HealthCheckDB handles GET /health/db requests - checks DynamoDB connectivity
+func (h *ItemHandler) HealthCheckDB(w http.ResponseWriter, r *http.Request) {
+	dynamoDBStatus := "healthy"
+	dynamoDBMessage := "Connected"
+
+	// Try to verify DynamoDB connection
+	if dynamoRepo, ok := h.repo.(*repository.DynamoDBRepository); ok {
+		if err := dynamoRepo.HealthCheck(r.Context()); err != nil {
+			dynamoDBStatus = "unhealthy"
+			dynamoDBMessage = err.Error()
+		}
+	} else {
+		dynamoDBStatus = "unknown"
+		dynamoDBMessage = "Repository type not recognized"
+	}
+
+	success := dynamoDBStatus == "healthy"
+	statusCode := http.StatusOK
+	if !success {
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	response := models.APIResponse{
+		Success: success,
+		Data: map[string]interface{}{
+			"status":    dynamoDBStatus,
+			"service":   "DynamoDB",
+			"message":   dynamoDBMessage,
+			"tableName": h.getTableName(),
+		},
+	}
+
+	writeJSONResponse(w, statusCode, response)
+}
+
+// getTableName returns the DynamoDB table name if available
+func (h *ItemHandler) getTableName() string {
+	if dynamoRepo, ok := h.repo.(*repository.DynamoDBRepository); ok {
+		return dynamoRepo.GetTableName()
+	}
+	return "unknown"
 }
 
 // CreateItem handles POST /items requests
