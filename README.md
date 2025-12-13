@@ -237,6 +237,78 @@ If you prefer using the AWS Console instead of command-line tools, you can deplo
    aws s3 cp lambda s3://your-deployment-bucket-name/fis-playground-lambda.zip
    ```
 
+3. **Create CloudFormation Service Role (Optional but Recommended):**
+   
+   For console deployment, you can either use your user permissions directly or create a dedicated CloudFormation service role. Using a service role is recommended for better security and audit trails.
+
+   **Option A: Use Your User Permissions (Simpler)**
+   - Your AWS user needs the permissions listed in [Required IAM Permissions](#3-required-iam-permissions)
+   - Leave the "IAM role" field empty during stack creation
+   - CloudFormation will use your user's permissions
+
+   **Option B: Create CloudFormation Service Role (Recommended)**
+   
+   Create a dedicated IAM role for CloudFormation to use:
+
+   ```bash
+   # Create the CloudFormation service role
+   aws iam create-role \
+     --role-name CloudFormation-FISPlayground-Role \
+     --assume-role-policy-document '{
+       "Version": "2012-10-17",
+       "Statement": [
+         {
+           "Effect": "Allow",
+           "Principal": {
+             "Service": "cloudformation.amazonaws.com"
+           },
+           "Action": "sts:AssumeRole"
+         }
+       ]
+     }'
+
+   # Create and attach the policy
+   aws iam put-role-policy \
+     --role-name CloudFormation-FISPlayground-Role \
+     --policy-name FISPlaygroundDeploymentPolicy \
+     --policy-document '{
+       "Version": "2012-10-17",
+       "Statement": [
+         {
+           "Effect": "Allow",
+           "Action": [
+             "lambda:*",
+             "apigateway:*",
+             "dynamodb:*",
+             "iam:CreateRole",
+             "iam:DeleteRole",
+             "iam:AttachRolePolicy",
+             "iam:DetachRolePolicy",
+             "iam:PassRole",
+             "iam:GetRole",
+             "iam:CreatePolicy",
+             "iam:DeletePolicy",
+             "iam:GetPolicy",
+             "iam:ListAttachedRolePolicies",
+             "logs:CreateLogGroup",
+             "logs:DeleteLogGroup",
+             "logs:PutRetentionPolicy",
+             "logs:DescribeLogGroups",
+             "s3:GetObject"
+           ],
+           "Resource": "*"
+         }
+       ]
+     }'
+   ```
+
+   **Or create via AWS Console:**
+   
+   1. Go to **IAM** → **Roles** → **Create role**
+   2. Select **AWS service** → **CloudFormation**
+   3. Create a custom policy with the permissions above
+   4. Name the role: `CloudFormation-FISPlayground-Role`
+
 ### Console Deployment Steps
 
 #### Step 1: Access CloudFormation Console
@@ -267,8 +339,26 @@ If you prefer using the AWS Console instead of command-line tools, you can deplo
    - Key: `Environment`, Value: `dev` (or your environment)
    - Key: `Purpose`, Value: `FaultInjectionTesting`
 
-2. **Permissions** (Optional):
-   - Leave as default unless you have specific IAM role requirements
+2. **Permissions - IAM Role Selection**:
+   
+   **Option A: Use Your User Permissions**
+   - Leave **"IAM role"** field empty
+   - CloudFormation will use your current user's permissions
+   - Ensure your user has all required permissions from [Required IAM Permissions](#3-required-iam-permissions)
+
+   **Option B: Use CloudFormation Service Role (Recommended)**
+   - In **"IAM role"** dropdown, select: `CloudFormation-FISPlayground-Role`
+   - If you don't see the role, ensure it was created properly in the prerequisites
+   - This provides better security isolation and audit trails
+
+   **IAM Role Requirements Summary:**
+   The selected role (or your user) needs permissions for:
+   - **Lambda**: Create, update, delete functions and permissions
+   - **API Gateway**: Create, configure, and manage REST APIs
+   - **DynamoDB**: Create, configure, and manage tables
+   - **IAM**: Create and manage service roles for Lambda
+   - **CloudWatch Logs**: Create and manage log groups
+   - **S3**: Read access to Lambda deployment packages
 
 3. **Stack failure options**:
    - Select **"Roll back all stack resources"** (recommended)
@@ -320,6 +410,42 @@ Once deployment completes (status: **CREATE_COMPLETE**):
    - Check that you acknowledged IAM resource creation
    - Review the IAM permissions in the [AWS Setup](#aws-setup) section
 
+4. **CloudFormation Service Role Issues**
+   
+   **Error**: `User: arn:aws:iam::123456789012:user/username is not authorized to perform: iam:PassRole on resource: arn:aws:iam::123456789012:role/CloudFormation-FISPlayground-Role`
+   
+   **Solution**: Your user needs `iam:PassRole` permission for the CloudFormation service role:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": "iam:PassRole",
+         "Resource": "arn:aws:iam::*:role/CloudFormation-FISPlayground-Role"
+       }
+     ]
+   }
+   ```
+
+   **Error**: `Insufficient permissions to create stack`
+   
+   **Solutions**:
+   - **Option 1**: Use your user permissions (leave IAM role empty)
+   - **Option 2**: Ensure the CloudFormation service role has all required permissions
+   - **Option 3**: Add missing permissions to the service role policy
+
+   **Error**: `Role does not exist or cannot be assumed`
+   
+   **Solution**: Verify the CloudFormation service role was created correctly:
+   ```bash
+   # Check if role exists
+   aws iam get-role --role-name CloudFormation-FISPlayground-Role
+   
+   # Check role's trust policy allows CloudFormation
+   aws iam get-role --role-name CloudFormation-FISPlayground-Role --query 'Role.AssumeRolePolicyDocument'
+   ```
+
 4. **Stack Creation Fails**
    - Check the **Events** tab for specific error messages
    - Common issues: resource limits, naming conflicts, region availability
@@ -347,6 +473,22 @@ To clean up resources:
 4. Monitor the **Events** tab for deletion progress
 5. Verify all resources are removed
 
+### IAM Role Quick Reference
+
+| Deployment Method | IAM Role Requirement | Permissions Needed |
+|-------------------|---------------------|-------------------|
+| **Console - User Permissions** | None (leave empty) | Your user needs all CloudFormation + service permissions |
+| **Console - Service Role** | `CloudFormation-FISPlayground-Role` | Service role needs service permissions, user needs `iam:PassRole` |
+| **Command Line** | None (uses user permissions) | Your user needs all CloudFormation + service permissions |
+
+**Required Service Permissions** (for user or service role):
+- `lambda:*` - Lambda function management
+- `apigateway:*` - API Gateway management  
+- `dynamodb:*` - DynamoDB table management
+- `iam:CreateRole`, `iam:AttachRolePolicy`, `iam:PassRole` - IAM role management
+- `logs:*` - CloudWatch Logs management
+- `s3:GetObject` - S3 access for Lambda code
+
 ### Console vs Command Line Comparison
 
 | Feature | Console | Command Line |
@@ -358,6 +500,7 @@ To clean up resources:
 | **Repeatability** | Manual steps each time | Scriptable and repeatable |
 | **Advanced Options** | All CloudFormation features | All CloudFormation features |
 | **Learning Curve** | Beginner-friendly | Requires CLI familiarity |
+| **IAM Role Options** | Can use service role or user permissions | Uses user permissions only |
 
 ### When to Use Console Deployment
 
