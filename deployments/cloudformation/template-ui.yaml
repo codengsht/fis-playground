@@ -26,7 +26,7 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub 'fis-playground-items-${Environment}'
-      BillingMode: ON_DEMAND
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -201,10 +201,10 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   # POST /items method
   ItemsPostMethod:
@@ -221,8 +221,8 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 201
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
 
   # GET /items/{id} method
   ItemGetMethod:
@@ -286,10 +286,10 @@ Resources:
           application/json: '{"statusCode": 200}'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: true
-            Access-Control-Allow-Headers: true
-            Access-Control-Allow-Methods: true
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   ItemOptionsMethod:
     Type: AWS::ApiGateway::Method
@@ -310,10 +310,10 @@ Resources:
           application/json: '{"statusCode": 200}'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: true
-            Access-Control-Allow-Headers: true
-            Access-Control-Allow-Methods: true
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   # API Gateway Deployment
   ApiDeployment:
