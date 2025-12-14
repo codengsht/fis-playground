@@ -81,19 +81,19 @@ Resources:
     Condition: HasLambdaCode
     Properties:
       FunctionName: !Sub 'fis-playground-${Environment}'
-      Runtime: go1.x
-      Handler: main
+      Runtime: provided.al2023
+      Handler: bootstrap
+      Architectures:
+        - x86_64
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
         S3Bucket: !Ref LambdaCodeS3Bucket
         S3Key: !Ref LambdaCodeS3Key
       Timeout: 30
       MemorySize: 256
-      ReservedConcurrencyLimit: 10
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref ItemsTable
-          AWS_REGION: !Ref AWS::Region
           ENVIRONMENT: !Ref Environment
       Tags:
         - Key: Environment
@@ -135,6 +135,56 @@ Resources:
       RestApiId: !Ref FISPlaygroundApi
       ParentId: !Ref ItemsResource
       PathPart: '{id}'
+
+  # Root resource for /health
+  HealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ParentId: !GetAtt FISPlaygroundApi.RootResourceId
+      PathPart: health
+
+  # Resource for /health/db
+  HealthDBResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ParentId: !Ref HealthResource
+      PathPart: db
+
+  # GET /health method - simple API health check
+  HealthGetMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: HasLambdaCode
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref HealthResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+        - StatusCode: 503
+
+  # GET /health/db method - DynamoDB connectivity check
+  HealthDBGetMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: HasLambdaCode
+    Properties:
+      RestApiId: !Ref FISPlaygroundApi
+      ResourceId: !Ref HealthDBResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FISPlaygroundFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+        - StatusCode: 503
 
   # GET /items method
   ItemsGetMethod:
@@ -277,6 +327,8 @@ Resources:
       - ItemDeleteMethod
       - ItemsOptionsMethod
       - ItemOptionsMethod
+      - HealthGetMethod
+      - HealthDBGetMethod
     Properties:
       RestApiId: !Ref FISPlaygroundApi
       StageName: !Ref Environment
