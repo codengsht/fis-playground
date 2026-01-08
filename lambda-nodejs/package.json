@@ -1,0 +1,12 @@
+{
+  "name": "fis-playground-lambda",
+  "version": "1.0.0",
+  "description": "FIS Playground Lambda handler",
+  "main": "index.js",
+  "type": "commonjs",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "latest",
+    "@aws-sdk/lib-dynamodb": "latest"
+  }
+}

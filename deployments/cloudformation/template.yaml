@@ -16,7 +16,7 @@ Parameters:
 
 Globals:
   Function:
-    Runtime: provided.al2023
+    Runtime: nodejs20.x
 
 Resources:
   # DynamoDB Table for storing items
@@ -43,7 +43,7 @@ Resources:
         - Key: Purpose
           Value: FaultInjectionTesting
 
-  # Lambda Function with Go runtime and DynamoDB permissions
+  # Lambda Function with Node.js runtime and DynamoDB permissions
   FISPlaygroundFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -51,8 +51,8 @@ Resources:
       CodeUri:
         Bucket: !Ref LambdaS3Bucket
         Key: !Ref LambdaS3Key
-      Handler: bootstrap
-      Runtime: provided.al2023
+      Handler: index.handler
+      Runtime: nodejs20.x
       Architectures:
         - x86_64
       Timeout: 30

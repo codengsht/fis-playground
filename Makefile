@@ -1,13 +1,10 @@
 # FIS Playground Makefile
 
-.PHONY: build deploy test clean help fmt vet mod-tidy check clean-build integration-test
+.PHONY: build deploy test clean help check clean-build
 
 # Build configuration
-GOOS=linux
-GOARCH=amd64
-CGO_ENABLED=0
 BUILD_DIR=build
-BINARY_NAME=bootstrap
+LAMBDA_SRC=lambda-nodejs
 PACKAGE_NAME=lambda-deployment.zip
 
 # Default target
@@ -15,19 +12,16 @@ help:
 	@echo "FIS Playground - Available commands:"
 	@echo "  build            - Build the Lambda function"
 	@echo "  deploy           - Deploy the CloudFormation stack"
-	@echo "  test             - Run unit tests and code quality checks"
-	@echo "  integration-test - Run end-to-end integration tests"
+	@echo "  test             - Run unit tests"
 	@echo "  clean            - Clean up AWS resources"
 	@echo "  help             - Show this help message"
 
 # Build the Lambda function
 build:
-	@echo "Building Lambda function for $(GOOS)/$(GOARCH)..."
+	@echo "Building Lambda function (Node.js)..."
 	@mkdir -p $(BUILD_DIR)
-	@cd cmd/lambda && GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
-		go build -ldflags="-s -w" -trimpath -o ../../$(BUILD_DIR)/$(BINARY_NAME) .
-	@chmod 755 $(BUILD_DIR)/$(BINARY_NAME)
-	@cd $(BUILD_DIR) && zip -r $(PACKAGE_NAME) $(BINARY_NAME)
+	@cd $(LAMBDA_SRC) && npm ci --omit=dev
+	@cd $(LAMBDA_SRC) && zip -r ../$(BUILD_DIR)/$(PACKAGE_NAME) .
 	@echo "Build completed: $(BUILD_DIR)/$(PACKAGE_NAME)"
 
 # Deploy the CloudFormation stack
@@ -50,24 +44,6 @@ clean:
 	@echo "Cleaning up resources..."
 	./scripts/cleanup.sh
 
-# Development targets
-fmt:
-	@echo "Formatting Go code..."
-	go fmt ./...
-
-vet:
-	@echo "Running go vet..."
-	go vet ./...
-
-mod-tidy:
-	@echo "Tidying Go modules..."
-	go mod tidy
-
-# Run integration tests
-integration-test:
-	@echo "Running integration tests..."
-	./test/integration/run_tests.sh
-
 # Combined development check
-check: fmt vet test
+check: test
 	@echo "All checks passed!"

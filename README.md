@@ -1,6 +1,6 @@
 # FIS Playground
 
-A serverless playground application designed for learning and experimenting with AWS Fault Injection Service (FIS). The system provides a realistic microservice architecture using API Gateway, Lambda functions written in Go, and DynamoDB storage, all deployed via CloudFormation for easy provisioning and teardown.
+A serverless playground application designed for learning and experimenting with AWS Fault Injection Service (FIS). The system provides a realistic microservice architecture using API Gateway, Lambda functions written in Node.js, and DynamoDB storage, all deployed via CloudFormation for easy provisioning and teardown.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ The application follows a three-tier serverless architecture designed for fault 
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   API Gateway   │───▶│   Lambda (Go)    │───▶│    DynamoDB     │
+│   API Gateway   │───▶│  Lambda (Node)   │───▶│    DynamoDB     │
 │                 │    │                  │    │                 │
 │ - HTTP Routing  │    │ - Business Logic │    │ - Data Storage  │
 │ - Request/Resp  │    │ - Validation     │    │ - Persistence   │
@@ -31,7 +31,7 @@ The application follows a three-tier serverless architecture designed for fault 
 ### Components
 
 - **API Gateway**: RESTful API with CORS support, handles HTTP routing and request/response transformation
-- **Lambda Function**: Go-based serverless compute processing business logic with comprehensive error handling
+- **Lambda Function**: Node.js-based serverless compute processing business logic with comprehensive error handling
 - **DynamoDB**: NoSQL database providing fast, scalable data persistence with on-demand billing
 - **CloudFormation**: Infrastructure as Code ensuring consistent, reproducible deployments
 
@@ -39,7 +39,7 @@ The application follows a three-tier serverless architecture designed for fault 
 
 ### Required Software
 
-- **Go 1.21 or later**: [Download Go](https://golang.org/dl/)
+- **Node.js 20.x or later** (includes npm): [Download Node.js](https://nodejs.org/)
 - **AWS CLI v2**: [Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - **Make**: Build automation (usually pre-installed on macOS/Linux)
 - **curl**: For API testing (usually pre-installed)
@@ -132,11 +132,12 @@ aws ec2 describe-regions --query 'Regions[].RegionName' --output table
 git clone <repository-url>
 cd fis-playground
 
-# Verify Go installation
-go version
+# Verify Node installation
+node -v
 
-# Download dependencies
-go mod download
+# Install Lambda dependencies (optional; build will run npm ci)
+cd lambda-nodejs && npm install
+cd ..
 ```
 
 ### Step 2: Build the Application
@@ -150,9 +151,9 @@ make build
 ```
 
 The build process:
-1. Compiles Go code for Linux/AMD64 architecture
-2. Creates a deployment package
-3. Validates the binary
+1. Installs production Node.js dependencies
+2. Packages the Lambda handler and dependencies
+3. Creates `build/lambda-deployment.zip`
 
 ### Step 3: Deploy Infrastructure
 
@@ -210,7 +211,7 @@ You can test the API using: curl https://abc123.execute-api.us-east-1.amazonaws.
 
 ```bash
 # Quick health check
-curl https://your-api-endpoint.amazonaws.com/dev/items
+curl https://your-api-endpoint.amazonaws.com/dev/health
 
 # Run integration tests
 make test-integration
@@ -226,11 +227,11 @@ The project includes two CloudFormation templates:
 
 | Template | Purpose | Lambda Code Reference |
 |----------|---------|----------------------|
-| `template.yaml` | **Command-line deployment** (SAM) | Local directory (`../../cmd/lambda/`) |
-| `template-ui.yaml` | **Console deployment** (Standard CloudFormation) | S3 bucket reference |
+| `template.yaml` | **Command-line deployment** (SAM) | S3 bucket/key parameters (`LambdaS3Bucket`, `LambdaS3Key`) |
+| `template-ui.yaml` | **Console deployment** (Standard CloudFormation) | S3 bucket/key parameters |
 
 **For console deployment, you MUST use `template-ui.yaml`** because:
-- The main `template.yaml` uses AWS SAM syntax with local file references
+- The main `template.yaml` uses the AWS SAM transform
 - SAM templates require the SAM CLI for deployment
 - The `template-ui.yaml` is designed for standard CloudFormation with S3 references
 
@@ -248,13 +249,13 @@ The project includes two CloudFormation templates:
    aws s3 mb s3://your-unique-deployment-bucket-name --region us-east-1
    
    # Upload the Lambda deployment package
-   aws s3 cp lambda s3://your-unique-deployment-bucket-name/lambda-deployment.zip
+   aws s3 cp build/lambda-deployment.zip s3://your-unique-deployment-bucket-name/lambda-deployment.zip
    ```
    
    **Important Notes:**
    - The S3 bucket name must be globally unique
    - Use the same region where you'll deploy the CloudFormation stack
-   - The Lambda binary file is created by the build process as `lambda`
+   - The build output is `build/lambda-deployment.zip`
    - You're uploading it to S3 with the key `lambda-deployment.zip`
 
 3. **Create CloudFormation Service Role (Optional but Recommended):**
@@ -433,7 +434,7 @@ Once deployment completes (status: **CREATE_COMPLETE**):
      ```
 
 2. **Lambda Code Not Found**
-   - Verify the Lambda code was built: `make build` should create a `lambda` file
+   - Verify the Lambda code was built: `make build` should create `build/lambda-deployment.zip`
    - Verify the code was uploaded to S3:
      ```bash
      aws s3 ls s3://your-bucket-name/lambda-deployment.zip
@@ -582,8 +583,7 @@ All API responses follow a consistent JSON format:
   "success": true,
   "data": {
     // Response data here
-  },
-  "error": null
+  }
 }
 ```
 
@@ -592,12 +592,10 @@ Error responses:
 ```json
 {
   "success": false,
-  "data": null,
   "error": {
-    "type": "ValidationError",
-    "code": "INVALID_INPUT",
-    "message": "Name is required and cannot be empty",
-    "details": {}
+    "type": "validation",
+    "code": "MISSING_FIELD",
+    "message": "name cannot be empty"
   }
 }
 ```
@@ -646,11 +644,11 @@ Verifies DynamoDB connectivity and returns table information.
 ```json
 {
   "success": false,
-  "data": null,
-  "error": {
-    "type": "ServiceError",
-    "code": "DATABASE_UNAVAILABLE",
-    "message": "Unable to connect to DynamoDB"
+  "data": {
+    "message": "DynamoDB health check failed",
+    "service": "DynamoDB",
+    "status": "unhealthy",
+    "tableName": "fis-playground-items-dev"
   }
 }
 ```
@@ -687,7 +685,7 @@ Creates a new item in the system.
 
 **Validation Rules:**
 - `name`: Required, 1-100 characters
-- `description`: Optional, max 500 characters
+- `description`: Required, max 500 characters
 
 #### 2. Get Item
 
@@ -731,8 +729,8 @@ Retrieves a specific item by ID.
 Retrieves a paginated list of all items.
 
 **Query Parameters:**
-- `limit`: Number of items to return (default: 20, max: 100)
-- `cursor`: Pagination cursor for next page
+- `limit`: Number of items to return (default: 50, max: 100)
+- `next_token`: Pagination token for next page (placeholder token)
 
 **Response (200 OK):**
 ```json
@@ -758,7 +756,7 @@ Retrieves a paginated list of all items.
       }
     ],
     "has_more": false,
-    "next_cursor": null
+    "next_token": null
   },
   "error": null
 }
@@ -798,7 +796,7 @@ Updates an existing item. Only provided fields will be updated.
 **Validation Rules:**
 - `name`: Optional, 1-100 characters if provided
 - `description`: Optional, max 500 characters if provided
-- `status`: Optional, must be "active" or "inactive" if provided
+- `status`: Optional, must be "active", "inactive", or "pending" if provided
 
 #### 5. Delete Item
 
@@ -812,7 +810,7 @@ Deletes an item from the system.
   "success": true,
   "data": {
     "message": "Item deleted successfully",
-    "deleted_id": "550e8400-e29b-41d4-a716-446655440000"
+    "id": "550e8400-e29b-41d4-a716-446655440000"
   },
   "error": null
 }
@@ -946,45 +944,27 @@ print(f"Created: {result}")
 Run unit tests for individual components:
 
 ```bash
-# Run all unit tests
+# Run all unit tests (Node.js)
 make test
 
-# Run tests with coverage
-make test-coverage
-
-# Run specific package tests
-go test ./internal/handlers/...
+# Run tests directly
+node --test test/lambda/handler.test.js
 ```
 
 ### Integration Tests
 
-Integration tests require a deployed API endpoint:
-
-```bash
-# Set API endpoint (from deployment output)
-export API_ENDPOINT=https://your-api-endpoint.amazonaws.com/dev
-
-# Run integration tests
-make test-integration
-
-# Or run directly
-cd test/integration && go test -v
-```
+There are no bundled integration tests. Use curl or your preferred tool to validate the deployed API.
 
 ### Manual Testing
 
-Use the provided test script for quick manual verification:
+Use the provided test script for quick verification:
 
 ```bash
-# Run comprehensive API tests
+# Run unit tests
 ./scripts/test.sh
 ```
 
-This script performs:
-1. Health check
-2. CRUD operations workflow
-3. Error scenario testing
-4. Response format validation
+This script runs the Node.js unit tests for the Lambda handler.
 
 ## Troubleshooting
 
@@ -1024,12 +1004,12 @@ export AWS_DEFAULT_REGION=us-east-1
 
 #### 4. Build Failures
 
-**Error:** `go: command not found`
+**Error:** `node: command not found`
 
 **Solution:**
-- Install Go 1.21 or later
-- Ensure Go is in your PATH
-- Verify with `go version`
+- Install Node.js 20.x or later
+- Ensure Node.js is in your PATH
+- Verify with `node -v`
 
 #### 5. Lambda Function Timeout
 
@@ -1153,21 +1133,10 @@ Typical costs for light testing: **< $1 per month**
 
 ```
 fis-playground/
-├── cmd/
-│   └── lambda/                 # Lambda function entry point
-│       └── main.go
-├── internal/
-│   ├── handlers/               # HTTP request handlers
-│   │   ├── handlers.go
-│   │   ├── handlers_test.go
-│   │   └── errors.go
-│   ├── models/                 # Data models and types
-│   │   └── item.go
-│   └── repository/             # Data access layer
-│       ├── dynamodb.go
-│       ├── client.go
-│       ├── errors.go
-│       └── example.go
+├── lambda-nodejs/              # Node.js Lambda handler and deps
+│   ├── index.js
+│   ├── package.json
+│   └── package-lock.json
 ├── deployments/
 │   └── cloudformation/         # Infrastructure as Code
 │       ├── template.yaml
@@ -1178,13 +1147,9 @@ fis-playground/
 │   ├── cleanup.sh             # Clean up resources
 │   └── test.sh                # Run tests
 ├── test/
-│   └── integration/           # Integration tests
-│       ├── api_test.go
-│       ├── go.mod
-│       ├── run_tests.sh
-│       └── README.md
-├── go.mod                     # Go module definition
-├── go.sum                     # Go module checksums
+│   └── lambda/                # Node.js unit tests
+│       └── handler.test.js
+├── build/                     # Build artifacts
 ├── Makefile                   # Build automation
 └── README.md                  # This documentation
 ```

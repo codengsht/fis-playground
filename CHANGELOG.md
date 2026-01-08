@@ -28,6 +28,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated CloudFormation template with health endpoint API Gateway resources
 - Improved error handling in `internal/repository/errors.go` and `internal/repository/dynamodb.go`
 
+## [0.0.3] - 2026-01-08
+
+### Added
+- Node.js Lambda implementation with AWS SDK v3 dependencies
+- Node.js unit tests for Lambda handler behavior
+
+### Changed
+- Updated Lambda runtime to `nodejs20.x` to remove custom bootstrap requirements
+- CloudFormation templates updated to use `index.handler` for Node.js runtime
+- Build process now packages Node.js handler and dependencies into `lambda-deployment.zip`
+
+### Removed
+- Legacy Go Lambda implementation and Go-based integration tests
+- Go release artifacts/configuration tied to the previous runtime
+
+### Technical Details
+- New Node.js handler in `lambda-nodejs/index.js`
+- Added `lambda-nodejs/package.json` to bundle AWS SDK v3 modules
+
 ## [0.0.1]
 
 ### Added

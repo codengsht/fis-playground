@@ -5,20 +5,12 @@ set -e
 
 echo "Running FIS Playground tests..."
 
-# Run Go tests
-echo "Running unit tests..."
-go test -v ./...
-
-# Run Go vet for static analysis
-echo "Running go vet..."
-go vet ./...
-
-# Run Go fmt check
-echo "Checking code formatting..."
-if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
-    echo "Code is not properly formatted. Run 'go fmt ./...' to fix."
-    gofmt -l .
+if ! command -v node >/dev/null 2>&1; then
+    echo "Node.js is required to run tests."
     exit 1
 fi
+
+echo "Running Node.js unit tests..."
+node --test test/lambda/handler.test.js
 
 echo "All tests passed successfully!"

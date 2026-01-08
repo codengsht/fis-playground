@@ -81,8 +81,8 @@ Resources:
     Condition: HasLambdaCode
     Properties:
       FunctionName: !Sub 'fis-playground-${Environment}'
-      Runtime: provided.al2023
-      Handler: bootstrap
+      Runtime: nodejs20.x
+      Handler: index.handler
       Architectures:
         - x86_64
       Role: !GetAtt LambdaExecutionRole.Arn
