@@ -15,7 +15,7 @@ Parameters:
   LambdaCodeS3Key:
     Type: String
     Description: S3 key for the Lambda deployment package
-    Default: "lambda-deployment.zip"
+    Default: "nodejs/lambda-deployment.zip"
 
 Conditions:
   HasLambdaCode: !Not [!Equals [!Ref LambdaCodeS3Bucket, ""]]

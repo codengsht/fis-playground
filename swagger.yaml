@@ -7,7 +7,7 @@ info:
     name: API Support
 
 servers:
-  - url: https://f9nqzha9z3.execute-api.us-east-1.amazonaws.com/dev
+  - url: https://r2ffccdh62.execute-api.us-east-1.amazonaws.com/dev
     description: Development API Gateway
 
 paths:
