@@ -17,8 +17,31 @@ Parameters:
     Description: S3 key for the Lambda deployment package
     Default: "nodejs/lambda-deployment.zip"
 
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to attach the Lambda function
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs for the Lambda function
+
+  CreateDynamoDbEndpoint:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Create a DynamoDB VPC endpoint for private subnets without NAT
+
+  DynamoDbEndpointRouteTableIds:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Route table IDs to associate with the DynamoDB VPC endpoint (required if CreateDynamoDbEndpoint=true)
+
 Conditions:
   HasLambdaCode: !Not [!Equals [!Ref LambdaCodeS3Bucket, ""]]
+  HasDynamoDbEndpointRouteTables: !Not [!Equals [!Join ["", !Ref DynamoDbEndpointRouteTableIds], ""]]
+  CreateDynamoDbEndpointCondition: !And
+    - !Equals [!Ref CreateDynamoDbEndpoint, "true"]
+    - !Condition HasDynamoDbEndpointRouteTables
 
 Resources:
   # DynamoDB Table for storing items
@@ -59,6 +82,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
         - PolicyName: DynamoDBAccess
           PolicyDocument:
@@ -74,6 +98,22 @@ Resources:
                   - dynamodb:Query
                   - dynamodb:Scan
                 Resource: !GetAtt ItemsTable.Arn
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'fis-playground-lambda-sg-${Environment}'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FISPlayground
+        - Key: Purpose
+          Value: FaultInjectionTesting
 
   # Lambda Function
   FISPlaygroundFunction:
@@ -91,6 +131,10 @@ Resources:
         S3Key: !Ref LambdaCodeS3Key
       Timeout: 30
       MemorySize: 256
+      VpcConfig:
+        SubnetIds: !Ref PrivateSubnetIds
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
       Environment:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref ItemsTable
@@ -343,6 +387,22 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${FISPlaygroundApi}/*/*'
 
+  DynamoDBVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateDynamoDbEndpointCondition
+    Properties:
+      VpcId: !Ref VpcId
+      RouteTableIds: !Ref DynamoDbEndpointRouteTableIds
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: "dynamodb:*"
+            Resource: "*"
+
 Outputs:
   # API Gateway endpoint URL
   ApiEndpoint:
@@ -385,6 +445,18 @@ Outputs:
     Value: !GetAtt FISPlaygroundFunction.Arn
     Export:
       Name: !Sub '${AWS::StackName}-LambdaFunctionArn'
+
+  LambdaSecurityGroupId:
+    Description: 'Security Group ID attached to the Lambda function'
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaSecurityGroupId'
+
+  VpcIdOutput:
+    Description: 'VPC used by the stack'
+    Value: !Ref VpcId
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcId'
 
   StackName:
     Description: 'CloudFormation stack name'
