@@ -16,16 +16,23 @@ Parameters:
     Type: String
     Description: S3 key for the Lambda deployment package
     Default: "nodejs/lambda-deployment.zip"
+  
+  ReplicaRegion:
+    Type: String
+    Default: us-west-2
+    Description: Secondary region for DynamoDB Global Table replication
 
 Conditions:
   HasLambdaCode: !Not [!Equals [!Ref LambdaCodeS3Bucket, ""]]
 
 Resources:
-  # DynamoDB Table for storing items
+  # DynamoDB Global Table (eventually consistent - Version 2019.11.21)
+  # AWS::DynamoDB::GlobalTable without ReplicaTableClass defaults to eventually consistent
+  # This is compatible with FIS aws:dynamodb:global-table-pause-replication action
   ItemsTable:
-    Type: AWS::DynamoDB::Table
+    Type: AWS::DynamoDB::GlobalTable
     Properties:
-      TableName: !Sub 'fis-playground-items-${Environment}'
+      TableName: !Sub 'fis-playground-nodejs-items-${Environment}'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
@@ -33,23 +40,37 @@ Resources:
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          Tags:
+            - Key: Environment
+              Value: !Ref Environment
+            - Key: Application
+              Value: FISPlayground
+            - Key: Purpose
+              Value: FaultInjectionTesting
+        - Region: !Ref ReplicaRegion
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: true
+          Tags:
+            - Key: Environment
+              Value: !Ref Environment
+            - Key: Application
+              Value: FISPlayground
+            - Key: Purpose
+              Value: FaultInjectionTesting
       SSESpecification:
         SSEEnabled: true
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Application
-          Value: FISPlayground
-        - Key: Purpose
-          Value: FaultInjectionTesting
 
   # IAM Role for Lambda Function
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub 'fis-playground-lambda-role-${Environment}'
+      RoleName: !Sub 'fis-playground-nodejs-lambda-role-${Environment}'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -80,7 +101,7 @@ Resources:
     Type: AWS::Lambda::Function
     Condition: HasLambdaCode
     Properties:
-      FunctionName: !Sub 'fis-playground-${Environment}'
+      FunctionName: !Sub 'fis-playground-nodejs-${Environment}'
       Runtime: nodejs20.x
       Handler: index.handler
       Architectures:
@@ -107,7 +128,7 @@ Resources:
   FISPlaygroundApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Sub 'fis-playground-api-${Environment}'
+      Name: !Sub 'fis-playground-nodejs-api-${Environment}'
       Description: 'REST API for FIS Playground application'
       EndpointConfiguration:
         Types:
@@ -370,6 +391,12 @@ Outputs:
     Value: !GetAtt ItemsTable.Arn
     Export:
       Name: !Sub '${AWS::StackName}-DynamoDBTableArn'
+
+  ReplicaRegion:
+    Description: 'DynamoDB Global Table replica region'
+    Value: !Ref ReplicaRegion
+    Export:
+      Name: !Sub '${AWS::StackName}-ReplicaRegion'
 
   # Lambda function info
   LambdaFunctionName:
